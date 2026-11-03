@@ -12,19 +12,11 @@ ssl._create_default_https_context = ssl._create_unverified_context
 #                        НАСТРОЙКИ
 # ============================================================
 # Токен читается из переменной окружения TBANK_TOKEN.
-# На GitHub Actions она задаётся через Secrets (см. инструкцию).
-# Локально можно запустить так:
-#   Linux/macOS:  export TBANK_TOKEN="t.ваш_токен" && python bot.py
-#   Windows CMD:  set TBANK_TOKEN=t.ваш_токен && python bot.py
-#   Windows PS:   $env:TBANK_TOKEN="t.ваш_токен"; python bot.py
 TOKEN = os.environ.get("TBANK_TOKEN")
 
 TICKER = "TPAY"
 
 # Время покупки (по Новосибирску, UTC+7).
-# ВАЖНО: на GitHub Actions эта константа НЕ используется для ожидания —
-# расписание задаётся в cron (.github/workflows/trade-bot.yml).
-# Значения оставлены для справки и для локального запуска.
 TARGET_HOUR = 3
 TARGET_MINUTE = 47
 
@@ -32,26 +24,17 @@ TARGET_MINUTE = 47
 #                 ВЫБОР БРОКЕРСКОГО СЧЕТА
 # ------------------------------------------------------------
 # ID счета, с которого бот будет покупать TPAY.
-#   - задайте строку (например, "1234567890") — бот работает
-#     ТОЛЬКО с этим счетом;
-#   - оставьте None — бот возьмет первый счет из списка
-#     (не рекомендуется, если счетов несколько).
 ACCOUNT_ID = 2014611372
 # ------------------------------------------------------------
 
 # ------------------------------------------------------------
 #               КОЛИЧЕСТВО ПОКУПАЕМЫХ ПАЁВ
 # ------------------------------------------------------------
-# Сколько паёв TPAY купить:
-#   - задайте целое число (например, 10) — купит ровно столько;
-#   - если указать None — количество рассчитается по балансу
-#     (floor(баланс * 0.95 / цена)).
+# Сколько паёв TPAY купить. Если None - по балансу.
 QUANTITY_TO_BUY = 4
 # ------------------------------------------------------------
 
 # Использовать ли маржу (заёмные средства брокера):
-#   True  — заявка с confirmMarginTrade=True;
-#   False — только в пределах собственных средств.
 USE_MARGIN = True
 
 # Часовой пояс Новосибирска
@@ -97,11 +80,7 @@ def safe_request(method, endpoint, data=None):
 #                 ПОЛУЧЕНИЕ ДАННЫХ О СЧЁТЕ
 # ============================================================
 def get_accounts():
-    """
-    Возвращает ID счета для работы.
-    Если ACCOUNT_ID задан — использует его.
-    Иначе — берет первый доступный счет.
-    """
+    """Возвращает ID счета для работы."""
     if ACCOUNT_ID is not None:
         print(f"Используется счет из настроек: {ACCOUNT_ID}")
         return ACCOUNT_ID
@@ -152,6 +131,18 @@ def get_current_price(figi):
     return None
 
 
+def get_last_price(figi):
+    """Цена последней сделки (запасной вариант, если стакан пуст)."""
+    payload = {"instrumentId": [figi]}
+    data = safe_request('POST', 'MarketDataService/GetLastPrices', payload)
+    if data:
+        last_prices = data.get("lastPrices", [])
+        if last_prices:
+            price_data = last_prices[0].get("price", {})
+            return float(price_data.get("units", 0)) + float(price_data.get("nano", 0)) / 1e9
+    return None
+
+
 def get_portfolio_balance(account_id):
     """Доступный остаток в RUB."""
     payload = {"account_id": account_id}
@@ -186,10 +177,16 @@ def place_market_order(figi, account_id, direction, quantity, confirm_margin=Fal
     }
     data = safe_request('POST', 'OrdersService/PostOrder', payload)
     if data:
+        # ПРОВЕРЯЕМ СТАТУС ОТВЕТА
+        status = data.get("executionReportStatus", "НЕТ СТАТУСА")
+        print(f"ОТВЕТ БРОКЕРА: Статус заявки = {status}")
+        if status in ["EXECUTION_REPORT_STATUS_REJECTED", "EXECUTION_REPORT_STATUS_CANCELLED"]:
+            print(f"❌ Заявка ОТКЛОНЕНА брокером. Причина: {data.get('message', 'неизвестна')}")
+            return False
         print(f"Рыночная заявка на {direction} {quantity} паёв {TICKER} отправлена.")
         return True
     else:
-        print(f"Не удалось выставить заявку на {direction}.")
+        print(f"❌ Не удалось выставить заявку (ошибка API).")
         return False
 
 
@@ -200,7 +197,6 @@ def wait_until_target():
     """
     Ждёт наступления TARGET_HOUR:TARGET_MINUTE по НСК.
     НЕ используется на GitHub Actions (там запуск по cron).
-    Оставлена для локального запуска вручную.
     """
     now_nsk = datetime.now(NSK_TIMEZONE)
     target_today = now_nsk.replace(
@@ -238,8 +234,6 @@ def main():
     if not TOKEN:
         print("ОШИБКА: переменная окружения TBANK_TOKEN не задана.")
         print("На GitHub Actions проверьте Settings → Secrets and variables → Actions.")
-        print("Локально: export TBANK_TOKEN=\"t.ваш_токен\" (Linux/macOS) "
-              "или set TBANK_TOKEN=t.ваш_токен (Windows CMD).")
         return
 
     account_id = get_accounts()
@@ -256,15 +250,22 @@ def main():
 
     # --------------------------------------------------------
     #   НА GitHub ACTIONS БОТ ЗАПУСКАЕТСЯ ПО CRON — ЖДАТЬ НЕ НУЖНО.
-    #   Если хотите запускать локально со старым поведением (ждать
-    #   до TARGET_HOUR:TARGET_MINUTE), раскомментируйте строку ниже.
     # --------------------------------------------------------
     # wait_until_target()
     print("Запуск по расписанию (или вручную). Начинаем выполнение...")
 
+    # --------------------------------------------------------
+    #   ПОЛУЧЕНИЕ ЦЕНЫ (С ЗАПАСНЫМ ВАРИАНТОМ)
+    # --------------------------------------------------------
+    print("Пытаемся получить цену из стакана...")
     price = get_current_price(figi)
+
     if price is None:
-        print("Не удалось получить цену из стакана. Покупка отменена.")
+        print("Стакан пуст. Пробуем получить цену последней сделки...")
+        price = get_last_price(figi)
+
+    if price is None:
+        print("Не удалось получить цену ни из стакана, ни по последней сделке. Покупка отменена.")
         return
 
     balance = get_portfolio_balance(account_id)
