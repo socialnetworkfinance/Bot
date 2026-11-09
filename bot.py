@@ -11,14 +11,11 @@ ssl._create_default_https_context = ssl._create_unverified_context
 # ============================================================
 #                        НАСТРОЙКИ
 # ============================================================
-# Токен читается из переменной окружения TBANK_TOKEN.
 TOKEN = os.environ.get("TBANK_TOKEN")
 
 TICKER = "TPAY"
 
 # Время покупки (по Новосибирску, UTC+7).
-# Для GitHub Actions расписание берется из trade-bot.yml (cron).
-# Эти значения нужны только если вы запускаете бота локально вручную.
 TARGET_HOUR = 14
 TARGET_MINUTE = 0
 
@@ -26,14 +23,12 @@ TARGET_MINUTE = 0
 #                 ВЫБОР БРОКЕРСКОГО СЧЕТА
 # ------------------------------------------------------------
 ACCOUNT_ID = 2014611372
-# ------------------------------------------------------------
 
 # ------------------------------------------------------------
 #               КОЛИЧЕСТВО ПОКУПАЕМЫХ ПАЁВ
 # ------------------------------------------------------------
 # Сколько паёв TPAY купить. Если None - по балансу.
 QUANTITY_TO_BUY = 4
-# ------------------------------------------------------------
 
 # Использовать ли маржу (заёмные средства брокера):
 USE_MARGIN = True
@@ -81,7 +76,6 @@ def safe_request(method, endpoint, data=None):
 #                 ПОЛУЧЕНИЕ ДАННЫХ О СЧЁТЕ
 # ============================================================
 def get_accounts():
-    """Возвращает ID счета для работы."""
     if ACCOUNT_ID is not None:
         print(f"Используется счет из настроек: {ACCOUNT_ID}")
         return ACCOUNT_ID
@@ -97,7 +91,6 @@ def get_accounts():
 
 
 def get_figi(ticker):
-    """Ищет FIGI для инструмента (для TPAY — ETF в режиме TQBR)."""
     payload = {
         "query": ticker,
         "instrumentStatus": "INSTRUMENT_STATUS_BASE"
@@ -118,7 +111,6 @@ def get_figi(ticker):
 
 
 def get_current_price(figi):
-    """Текущая цена из стакана (лучший бид, иначе лучший аск)."""
     payload = {"figi": figi, "depth": 1}
     data = safe_request('POST', 'MarketDataService/GetOrderBook', payload)
     if data:
@@ -133,7 +125,6 @@ def get_current_price(figi):
 
 
 def get_last_price(figi):
-    """Цена последней сделки (запасной вариант, если стакан пуст)."""
     payload = {"instrumentId": [figi]}
     data = safe_request('POST', 'MarketDataService/GetLastPrices', payload)
     if data:
@@ -145,7 +136,6 @@ def get_last_price(figi):
 
 
 def get_portfolio_balance(account_id):
-    """Доступный остаток в RUB."""
     payload = {"account_id": account_id}
     data = safe_request('POST', 'OperationsService/GetPortfolio', payload)
     if data:
@@ -166,7 +156,6 @@ def get_portfolio_balance(account_id):
 #                   ВЫСТАВЛЕНИЕ ЗАЯВКИ
 # ============================================================
 def place_market_order(figi, account_id, direction, quantity, confirm_margin=False):
-    """Рыночная заявка. confirm_margin=True разрешает маржинальную сделку."""
     direction_value = 1 if direction.lower() == "buy" else 2
     payload = {
         "figi": figi,
@@ -178,7 +167,6 @@ def place_market_order(figi, account_id, direction, quantity, confirm_margin=Fal
     }
     data = safe_request('POST', 'OrdersService/PostOrder', payload)
     if data:
-        # ПРОВЕРЯЕМ СТАТУС ОТВЕТА
         status = data.get("executionReportStatus", "НЕТ СТАТУСА")
         print(f"ОТВЕТ БРОКЕРА: Статус заявки = {status}")
         if status in ["EXECUTION_REPORT_STATUS_REJECTED", "EXECUTION_REPORT_STATUS_CANCELLED"]:
@@ -192,38 +180,6 @@ def place_market_order(figi, account_id, direction, quantity, confirm_margin=Fal
 
 
 # ============================================================
-#                     ОЖИДАНИЕ ВРЕМЕНИ
-# ============================================================
-def wait_until_target():
-    """
-    Ждёт наступления TARGET_HOUR:TARGET_MINUTE по НСК.
-    НЕ используется на GitHub Actions (там запуск по cron).
-    """
-    now_nsk = datetime.now(NSK_TIMEZONE)
-    target_today = now_nsk.replace(
-        hour=TARGET_HOUR, minute=TARGET_MINUTE, second=0, microsecond=0
-    )
-    if now_nsk >= target_today:
-        target = target_today + timedelta(days=1)
-    else:
-        target = target_today
-
-    wait_seconds = (target - now_nsk).total_seconds()
-    print(f"Ожидание до {target.strftime('%Y-%m-%d %H:%M:%S %Z')} (НСК). "
-          f"Осталось {int(wait_seconds)} сек.")
-
-    while True:
-        now = datetime.now(NSK_TIMEZONE)
-        if now >= target:
-            print("Целевое время достигнуто.")
-            break
-        remaining = (target - now).total_seconds()
-        if remaining <= 0:
-            break
-        time.sleep(min(remaining, 60))
-
-
-# ============================================================
 #                      ОСНОВНАЯ ЛОГИКА
 # ============================================================
 def main():
@@ -231,10 +187,8 @@ def main():
     print(f" БОТ ДЛЯ ПОКУПКИ {TICKER}")
     print("=" * 60)
 
-    # --- Проверка токена ---
     if not TOKEN:
         print("ОШИБКА: переменная окружения TBANK_TOKEN не задана.")
-        print("На GitHub Actions проверьте Settings → Secrets and variables → Actions.")
         return
 
     account_id = get_accounts()
@@ -249,14 +203,10 @@ def main():
         return
     print(f"FIGI {TICKER}: {figi}")
 
-    # --------------------------------------------------------
-    #   НА GitHub ACTIONS БОТ ЗАПУСКАЕТСЯ ПО CRON — ЖДАТЬ НЕ НУЖНО.
-    # --------------------------------------------------------
-    # wait_until_target()
-    print("Запуск по расписанию (или вручную). Начинаем выполнение...")
+    print("Начинаем выполнение...")
 
     # --------------------------------------------------------
-    #   ПОЛУЧЕНИЕ ЦЕНЫ (С ЗАПАСНЫМ ВАРИАНТОМ)
+    #   ПОЛУЧЕНИЕ ЦЕНЫ (МЯГКАЯ ПРОВЕРКА)
     # --------------------------------------------------------
     print("Пытаемся получить цену из стакана...")
     price = get_current_price(figi)
@@ -266,40 +216,50 @@ def main():
         price = get_last_price(figi)
 
     if price is None:
-        print("Не удалось получить цену ни из стакана, ни по последней сделке. Покупка отменена.")
-        return
+        print("⚠️ ВНИМАНИЕ: Не удалось получить текущую цену (стакан и последняя сделка недоступны).")
+        print("Но так как вы просили, бот всё равно отправит рыночную заявку!")
+        price = 0.0  # Заглушка, чтобы не было ошибки при расчете
+    else:
+        print(f"Текущая цена {TICKER}: {price:.4f} RUB")
 
     balance = get_portfolio_balance(account_id)
     print(f"Баланс RUB: {balance:.2f}")
-    print(f"Текущая цена {TICKER}: {price:.4f} RUB")
 
     # --------------------------------------------------------
     #   ОПРЕДЕЛЕНИЕ КОЛИЧЕСТВА ПОКУПАЕМЫХ ПАЁВ
     # --------------------------------------------------------
     if QUANTITY_TO_BUY is not None and QUANTITY_TO_BUY > 0:
         quantity = int(QUANTITY_TO_BUY)
-        required_money = quantity * price
         print(f"Количество паёв (из QUANTITY_TO_BUY): {quantity}")
-        print(f"Требуется средств: {required_money:.2f} RUB "
-              f"(баланс: {balance:.2f} RUB).")
+        
+        # Считаем требуемые средства только если знаем цену
+        if price > 0:
+            required_money = quantity * price
+            print(f"Требуется средств: {required_money:.2f} RUB "
+                  f"(баланс: {balance:.2f} RUB).")
 
-        if required_money > balance and not USE_MARGIN:
-            print("Недостаточно средств. USE_MARGIN=False, покупка отменена.")
-            return
-        if required_money > balance and USE_MARGIN:
-            print(f"Внимание: сделка уйдёт в маржу на "
-                  f"{required_money - balance:.2f} RUB.")
+            if required_money > balance and not USE_MARGIN:
+                print("Недостаточно средств. USE_MARGIN=False, покупка отменена.")
+                return
+            if required_money > balance and USE_MARGIN:
+                print(f"Внимание: сделка уйдёт в маржу на "
+                      f"{required_money - balance:.2f} RUB.")
+        else:
+            print("Проверка требуемых средств пропущена (цена неизвестна).")
     else:
+        # Если QUANTITY_TO_BUY не задан, а цену мы не знаем — рассчитать нельзя
+        if price <= 0:
+            print("Нельзя рассчитать количество по балансу, так как цена неизвестна.")
+            return
+            
         if balance <= 0:
             print("Недостаточно средств.")
             return
         quantity = int((balance * 0.95) // price)
         if quantity <= 0:
-            print(f"Баланса {balance:.2f} RUB не хватает на 1 пай "
-                  f"по цене {price:.4f}.")
+            print(f"Баланса {balance:.2f} RUB не хватает на 1 пай.")
             return
-        print(f"QUANTITY_TO_BUY=None → количество рассчитано по балансу: "
-              f"{quantity} паёв.")
+        print(f"QUANTITY_TO_BUY=None → количество рассчитано по балансу: {quantity} паёв.")
 
     # --------------------------------------------------------
     #   ОТПРАВКА ЗАЯВКИ
@@ -311,7 +271,7 @@ def main():
     )
 
     if success:
-        print("Заявка на покупку исполнена (или отправлена). Бот завершает работу.")
+        print("Заявка на покупку исполнена (или отправлена).")
     else:
         print("Заявка не была выставлена. Проверьте вручную.")
 
