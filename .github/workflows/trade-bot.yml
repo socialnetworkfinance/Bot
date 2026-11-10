@@ -1,0 +1,32 @@
+name: TPAY Trading Bot
+
+on:
+  schedule:
+    # Запуск в 15:00 UTC (в 22:00 по Новосибирску). 
+    # Бот проснется, начнет ждать и купит ровно в 03:47 по НСК.
+    - cron: '0 15 * * *'
+  workflow_dispatch: # Кнопка для ручного теста
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # Максимум 6 часов, чтобы GitHub не убил бота во время ожидания
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run trading bot
+        env:
+          TBANK_TOKEN: ${{ secrets.TBANK_TOKEN }}
+        run: python bot.py
