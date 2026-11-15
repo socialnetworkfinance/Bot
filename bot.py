@@ -17,7 +17,7 @@ TICKER = "TPAY"
 # ЖЕЛЕЗНО ЖДЕМ 03:49:30 ПО НОВОСИБИРСКУ (добавлена настройка секунд)
 TARGET_HOUR = 3
 TARGET_MINUTE = 49
-TARGET_SECOND = 45
+TARGET_SECOND = 40
 
 ACCOUNT_ID = 2014611372
 QUANTITY_TO_BUY = 4
