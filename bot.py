@@ -14,9 +14,10 @@ ssl._create_default_https_context = ssl._create_unverified_context
 TOKEN = os.environ.get("TBANK_TOKEN")
 TICKER = "TPAY"
 
-# ЖЕЛЕЗНО ЖДЕМ 03:47 ПО НОВОСИБИРСКУ
+# ЖЕЛЕЗНО ЖДЕМ 03:49:00 ПО НОВОСИБИРСКУ (добавлена настройка секунд)
 TARGET_HOUR = 3
 TARGET_MINUTE = 49
+TARGET_SECOND = 0  # <-- Измените на нужное значение (от 0 до 59)
 
 ACCOUNT_ID = 2014611372
 QUANTITY_TO_BUY = 4
@@ -123,7 +124,8 @@ def place_market_order(figi, account_id, direction, quantity, confirm_margin=Fal
 # ============================================================
 def wait_until_target():
     now_nsk = datetime.now(NSK_TIMEZONE)
-    target_today = now_nsk.replace(hour=TARGET_HOUR, minute=TARGET_MINUTE, second=0, microsecond=0)
+    # Добавили TARGET_SECOND и убрали жесткий second=0
+    target_today = now_nsk.replace(hour=TARGET_HOUR, minute=TARGET_MINUTE, second=TARGET_SECOND, microsecond=0)
     if now_nsk >= target_today:
         target = target_today + timedelta(days=1)
     else:
@@ -151,7 +153,7 @@ def main():
         print("ОШИБКА: Нет токена TBANK_TOKEN")
         return
 
-    # 1. Сначала ждем 03:47
+    # 1. Сначала ждем целевое время
     wait_until_target()
 
     # 2. Как только время наступило - покупаем
