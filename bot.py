@@ -17,10 +17,10 @@ TICKER = "TPAY"
 # ЖЕЛЕЗНО ЖДЕМ 03:49:30 ПО НОВОСИБИРСКУ (добавлена настройка секунд)
 TARGET_HOUR = 3
 TARGET_MINUTE = 49
-TARGET_SECOND = 40
+TARGET_SECOND = 45
 
 ACCOUNT_ID = 2014611372
-QUANTITY_TO_BUY = 4
+QUANTITY_TO_BUY = 5
 USE_MARGIN = True
 NSK_TIMEZONE = timezone(timedelta(hours=7))
 BASE_URL = "https://invest-public-api.tbank.ru/rest"
