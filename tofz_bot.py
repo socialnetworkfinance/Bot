@@ -14,9 +14,9 @@ ssl._create_default_https_context = ssl._create_unverified_context
 TOKEN = os.environ.get("TBANK_TOKEN")
 TICKER = "TOFZ"
 
-# ЖЕЛЕЗНО ЖДЕМ 03:49:40 ПО НОВОСИБИРСКУ
+# ЖЕЛЕЗНО ЖДЕМ 03:46:45 ПО НОВОСИБИРСКУ
 TARGET_HOUR = 3
-TARGET_MINUTE = 49
+TARGET_MINUTE = 46
 TARGET_SECOND = 45
 
 ACCOUNT_ID = 2032933857
