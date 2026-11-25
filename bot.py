@@ -14,10 +14,10 @@ ssl._create_default_https_context = ssl._create_unverified_context
 TOKEN = os.environ.get("TBANK_TOKEN")
 TICKER = "TPAY"
 
-# ЖЕЛЕЗНО ЖДЕМ 03:49:51 ПО НОВОСИБИРСКУ (добавлена настройка секунд)
+# ЖЕЛЕЗНО ЖДЕМ 03:49:52 ПО НОВОСИБИРСКУ (добавлена настройка секунд)
 TARGET_HOUR = 3
 TARGET_MINUTE = 49
-TARGET_SECOND = 51
+TARGET_SECOND = 52
 
 ACCOUNT_ID = 2014611372
 QUANTITY_TO_BUY = 5
